@@ -411,6 +411,28 @@ const SIT_COLORS = {'Pendente Lançamento':'#dc2626','Pend. Escrita Fiscal':'#d9
 // Normalizar situações no raw data
 let DATA = RAW_DATA.map(r=>({...r, 'SitNorm': SIT_MAP[r['Situação']]||r['Situação']}));
 
+// ═══ PARCEIROS (CNPJ lookup) ══════════════════════════════
+let PARCEIROS = {}; // {cnpj14: nome}
+
+function cnpjFromChave(chave){
+  const c=String(chave||'').replace(/\s/g,'');
+  return c.length>=44 ? c.substring(6,20) : '';
+}
+
+async function fetchParceiros(cnpjs){
+  const uniq=[...new Set(cnpjs.filter(Boolean))];
+  if(!uniq.length||!SB_URL||!SB_KEY) return;
+  for(let i=0;i<uniq.length;i+=300){
+    const batch=uniq.slice(i,i+300).join(',');
+    try{
+      const r=await fetch(`${SB_URL}/rest/v1/parceiros_qive?select=cpf_cnpj,nome&cpf_cnpj=in.(${batch})`,{
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
+      });
+      if(r.ok)(await r.json()).forEach(p=>{ PARCEIROS[p.cpf_cnpj]=p.nome; });
+    }catch(e){ console.warn('parceiros fetch',e); }
+  }
+}
+
 // ═══ TEMA ═════════════════════════════════════════════════
 function initTheme(){
   const sys = window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
@@ -585,6 +607,10 @@ function loadFile(e){
       DATA=newData.map(r=>({...r,'SitNorm':SIT_MAP[r['Situação']]||r['Situação']}));
       renderAll();
       alert(`✅ ${DATA.length} registros carregados (${Object.keys(FILIAIS_META).length} filiais). Observações preservadas.`);
+      // Fetch supplier names async (re-renders open detail when done)
+      fetchParceiros(DATA.map(r=>cnpjFromChave(r['Chave Acesso']))).then(()=>{
+        if(openFilial) renderDetalhe(openFilial);
+      });
     }catch(err){ alert('Erro ao ler arquivo: '+err.message); }
   };
   if(isXls) reader.readAsArrayBuffer(f);
@@ -729,10 +755,15 @@ function renderDetalhe(fil){
     const cls=SIT_CLS[r.SitNorm]||'';
     const origTip=r['Origem Doc']==='NFE'?'Nota Fiscal Eletrônica':r['Origem Doc']==='CTE'?'Conhecimento de Transporte Eletrônico':'Nota Fiscal de Serviço';
     const lancTip=r['Lançamento']?`Lançamento via ${r['Lançamento']}`:'Sem lançamento registrado — indica que a nota nunca foi processada';
+    const cnpj=cnpjFromChave(r['Chave Acesso']);
+    const forn=PARCEIROS[cnpj]||'';
+    const fornTip=cnpj?`CNPJ: ${cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5')}${forn?' · '+forn:''}`:r['Chave Acesso']||'—';
+    const chaveShort=r['Chave Acesso']?String(r['Chave Acesso']).slice(-8):'—';
     return `<tr>
-      <td data-tip="Número da nota fiscal">${r['Número NF']}</td>
+      <td data-tip="Chave: ${r['Chave Acesso']||'—'}">${r['Número NF']}</td>
       <td data-tip="Modelo do documento fiscal: 55=NFe, 57=CTe, 99=NFSe">${r['Modelo']}</td>
       <td data-tip="${origTip}">${r['Origem Doc']}</td>
+      <td data-tip="${fornTip}" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${forn||`<span style="color:var(--muted);font-size:11px">${cnpj||'—'}</span>`}</td>
       <td data-tip="${lancTip}">${r['Lançamento']||'<span style="color:var(--red);font-size:11px">Sem lançamento</span>'}</td>
       <td>${`<span class="sit-badge ${cls}">${r.SitNorm}</span>`}</td>
       <td data-tip="Data de recebimento da nota no Qive">${r['Dt. Recebimento']||'—'}</td>
@@ -768,9 +799,10 @@ function renderDetalhe(fil){
     <div class="dtable-wrap">
       <table class="dtable">
         <thead><tr>
-          <th onclick="sortDetalhe('Número NF',this,${fil})" data-tip="Número da nota fiscal emitida">Nº NF</th>
+          <th onclick="sortDetalhe('Número NF',this,${fil})" data-tip="Número da nota fiscal — passe o mouse na linha para ver a chave de acesso completa">Nº NF</th>
           <th onclick="sortDetalhe('Modelo',this,${fil})" data-tip="Modelo do documento: 55=NFe · 57=CTe · 99=NFSe">Mod.</th>
-          <th onclick="sortDetalhe('Origem Doc',this,${fil})" data-tip="Tipo de documento fiscal">Origem/Doc</th>
+          <th onclick="sortDetalhe('Origem Doc',this,${fil})" data-tip="Tipo de documento fiscal">Origem</th>
+          <th data-tip="Fornecedor identificado pelo CNPJ da chave de acesso (posições 6-19)">Fornecedor</th>
           <th onclick="sortDetalhe('Lançamento',this,${fil})" data-tip="Como a nota foi processada: Qive/Xml=automático · Manual=digitado · vazio=nunca processada">Lançamento</th>
           <th onclick="sortDetalhe('SitNorm',this,${fil})" data-tip="Situação atual da nota no sistema Qive">Situação</th>
           <th onclick="sortDetalhe('Dt. Recebimento',this,${fil})" data-tip="Data em que a nota foi recebida no Qive">Dt. Receb.</th>
