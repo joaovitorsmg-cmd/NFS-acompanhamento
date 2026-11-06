@@ -443,14 +443,25 @@ function cnpjFromChave(chave, origemDoc){
 async function fetchParceiros(cnpjs){
   const uniq=[...new Set(cnpjs.filter(Boolean))];
   if(!uniq.length||!SB_URL||!SB_KEY) return;
+  let fetchOk=false, lastErr='';
   for(let i=0;i<uniq.length;i+=300){
     const batch=uniq.slice(i,i+300).join(',');
     try{
       const r=await fetch(`${SB_URL}/rest/v1/parceiros_qive?select=cpf_cnpj,nome,codigo&cpf_cnpj=in.(${batch})`,{
         headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
       });
-      if(r.ok)(await r.json()).forEach(p=>{ PARCEIROS[p.cpf_cnpj]={nome:p.nome,codigo:p.codigo||''}; });
-    }catch(e){ console.warn('parceiros fetch',e); }
+      if(r.ok){
+        fetchOk=true;
+        (await r.json()).forEach(p=>{ PARCEIROS[p.cpf_cnpj]={nome:p.nome,codigo:p.codigo||''}; });
+      } else {
+        lastErr=`HTTP ${r.status}`;
+        console.error('parceiros fetch error',r.status,await r.text());
+      }
+    }catch(e){ lastErr=e.message; console.warn('parceiros fetch',e); }
+  }
+  if(!fetchOk && lastErr){
+    const el=document.getElementById('sync-status');
+    if(el){ el.textContent='🔴 Erro fornecedores'; el.setAttribute('data-tip','Falha ao buscar nomes: '+lastErr+'. Verifique a chave Supabase (clique 5× no logo).'); }
   }
 }
 
@@ -501,9 +512,16 @@ async function saveSettings(){
   setTimeout(()=>document.getElementById('sb-status').style.display='none',3000);
 }
 
+function isValidJwt(k){ return typeof k==='string' && k.split('.').length===3 && k.length>50; }
 function initSupabase(){
+  let storedKey=localStorage.getItem('qive-sb-key');
+  if(storedKey && !isValidJwt(storedKey)){
+    // Chave corrompida no localStorage — limpa e usa default
+    localStorage.removeItem('qive-sb-key');
+    storedKey=null;
+  }
   SB_URL=localStorage.getItem('qive-sb-url')||_SB_URL_DEFAULT;
-  SB_KEY=localStorage.getItem('qive-sb-key')||_SB_KEY_DEFAULT;
+  SB_KEY=storedKey||_SB_KEY_DEFAULT;
   if(SB_URL&&SB_KEY){ loadObsFromSupabase().then(()=>updateSyncStatus(true)).catch(()=>updateSyncStatus(false)); }
 }
 
