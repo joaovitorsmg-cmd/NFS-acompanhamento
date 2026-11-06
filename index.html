@@ -472,7 +472,7 @@ initTheme();
 
 // ═══ SETTINGS / SUPABASE ══════════════════════════════════
 const _SB_URL_DEFAULT='https://yeburvkopwbmnfcmthtz.supabase.co';
-const _SB_KEY_DEFAULT='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllYnVydmtvcHdibW5mY210aHR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxMjMwODgsImV4cCI6MjA1MzY5OTA4OH0YnVydmtvcHdibW5mY210aHR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxMjMwODgsImV4cCI6MjA1MzY5OTA4OH0CI6MjEwODI2NTk0M30.3t-4Q8SM9XV0OdQLHktMUmKNItg1byBkyv0HGN3B-74';
+const _SB_KEY_DEFAULT='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllYnVydmtvcHdibW5mY210aHR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2ODk5NDMsImV4cCI6MjEwODI2NTk0M30.3t-4Q8SM9XV0OdQLHktMUmKNItg1byBkyv0HGN3B-74';
 let SB_URL=localStorage.getItem('qive-sb-url')||_SB_URL_DEFAULT,
     SB_KEY=localStorage.getItem('qive-sb-key')||_SB_KEY_DEFAULT,
     logoClickCount=0, logoClickTimer=null;
@@ -676,7 +676,7 @@ function pct_s(n,t){ return t?`${Math.round(n/t*100)}% do total`:'—'; }
 
 // ═══ FILIAIS ══════════════════════════════════════════════
 let openFilial=null;
-let detRows=[], detSortCol=null, detSortDir=1, detPage=1;
+let detRows=[], detSortCol=null, detSortDir=1, detPage=1, detFornFilter='';
 
 function getFilteredData(){
   const sit=document.getElementById('f-sit').value;
@@ -756,7 +756,7 @@ function toggleFilial(fil){
 
 function openFilialSit(fil, sitFilter){
   openFilial=String(fil);
-  detSortCol=null; detSortDir=1; detPage=1;
+  detSortCol=null; detSortDir=1; detPage=1; detFornFilter='';
   detRows=DATA.filter(r=>String(r.Filial)===String(fil)&&(!sitFilter||r.SitNorm===sitFilter));
   renderFiliais();
   renderDetalhe(fil);
@@ -775,9 +775,18 @@ function closeDetalhe(){
 function renderDetalhe(fil){
   const m=FILIAIS_META[String(fil)];
   const obs=OBS[String(fil)]||'';
+
+  // Aplica filtro por fornecedor sobre detRows
+  const q=detFornFilter.trim().toLowerCase();
+  const visRows=q ? detRows.filter(r=>{
+    const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
+    const p=PARCEIROS[cnpj];
+    return cnpj.includes(q)||(p?.nome||'').toLowerCase().includes(q)||(p?.codigo||'').toLowerCase().includes(q);
+  }) : detRows;
+
   const PSZ=25, start=(detPage-1)*PSZ;
-  const slice=detRows.slice(start,start+PSZ);
-  const tot=Math.ceil(detRows.length/PSZ)||1;
+  const slice=visRows.slice(start,start+PSZ);
+  const tot=Math.ceil(visRows.length/PSZ)||1;
 
   const rows=slice.map(r=>{
     const cls=SIT_CLS[r.SitNorm]||'';
@@ -785,14 +794,20 @@ function renderDetalhe(fil){
     const lancTip=r['Lançamento']?`Lançamento via ${r['Lançamento']}`:'Sem lançamento registrado — indica que a nota nunca foi processada';
     const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
     const p=PARCEIROS[cnpj];
-    const fornLabel=p?(p.codigo?p.codigo+' - ':'')+p.nome:'';
     const cnpjFmt=cnpj?cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5'):r['Chave Acesso']||'—';
     const fornTip=`${cnpjFmt}${p?' · '+p.nome:''}`;
+    let fornCell='';
+    if(p){
+      const cod=p.codigo?`<span style="font-weight:600;color:var(--accent)">${p.codigo}</span> · `:'';
+      fornCell=`${cod}<span style="font-size:12px">${p.nome}</span>`;
+    } else {
+      fornCell=`<span style="color:var(--muted);font-size:11px">${cnpj||'—'}</span>`;
+    }
     return `<tr>
       <td data-tip="Chave: ${r['Chave Acesso']||'—'}">${r['Número NF']}</td>
       <td data-tip="Modelo do documento fiscal: 55=NFe, 57=CTe, 99=NFSe">${r['Modelo']}</td>
       <td data-tip="${origTip}">${r['Origem Doc']}</td>
-      <td data-tip="${fornTip}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${fornLabel||`<span style="color:var(--muted);font-size:11px">${cnpj||'—'}</span>`}</td>
+      <td data-tip="${fornTip}" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${fornCell}</td>
       <td data-tip="${lancTip}">${r['Lançamento']||'<span style="color:var(--red);font-size:11px">Sem lançamento</span>'}</td>
       <td>${`<span class="sit-badge ${cls}">${r.SitNorm}</span>`}</td>
       <td data-tip="Data de recebimento da nota no Qive">${r['Dt. Recebimento']||'—'}</td>
@@ -802,12 +817,14 @@ function renderDetalhe(fil){
   let pagerHTML='';
   if(tot>1){
     pagerHTML=`<div class="det-pager">
-      <span class="det-pager-info">${Math.min(start+1,detRows.length)}–${Math.min(start+PSZ,detRows.length)} de ${detRows.length} notas</span>`;
+      <span class="det-pager-info">${Math.min(start+1,visRows.length)}–${Math.min(start+PSZ,visRows.length)} de ${visRows.length} nota${visRows.length!==1?'s':''}${q?' (filtradas)':''}</span>`;
     for(let i=Math.max(1,detPage-2);i<=Math.min(tot,detPage+2);i++){
       pagerHTML+=`<button class="pb${i===detPage?' act':''}" onclick="detGoPage(${i},${fil})">${i}</button>`;
     }
     if(detPage<tot) pagerHTML+=`<button class="pb" onclick="detGoPage(${detPage+1},${fil})">›</button>`;
     pagerHTML+='</div>';
+  } else if(visRows.length>0){
+    pagerHTML=`<div class="det-pager"><span class="det-pager-info">${visRows.length} nota${visRows.length!==1?'s':''}${q?' (filtradas)':''}</span></div>`;
   }
 
   const det=document.getElementById('filial-detalhe');
@@ -825,13 +842,22 @@ function renderDetalhe(fil){
       </div>
       <button class="close-btn" onclick="closeDetalhe()">✕ Fechar</button>
     </div>
+    <div style="padding:6px 12px 4px;display:flex;align-items:center;gap:8px;">
+      <input id="det-forn-filter" type="text" value="${detFornFilter.replace(/"/g,'&quot;')}"
+        placeholder="🔍 Filtrar por fornecedor (código, CNPJ ou nome)…"
+        oninput="detFornFilter=this.value;detPage=1;renderDetalhe(${fil})"
+        style="flex:1;padding:5px 10px;border:1px solid var(--brd);border-radius:6px;background:var(--bg);color:var(--fg);font-size:13px;"
+        data-tip="Filtra as notas desta filial por código, CNPJ ou nome do fornecedor">
+      ${detFornFilter?`<button onclick="detFornFilter='';detPage=1;renderDetalhe(${fil})" style="padding:4px 10px;border:1px solid var(--brd);border-radius:6px;cursor:pointer;font-size:12px;">✕ Limpar</button>`:''}
+      <span style="font-size:11px;color:var(--muted);white-space:nowrap;">${visRows.length} de ${detRows.length} notas</span>
+    </div>
     <div class="dtable-wrap">
       <table class="dtable">
         <thead><tr>
           <th onclick="sortDetalhe('Número NF',this,${fil})" data-tip="Número da nota fiscal — passe o mouse na linha para ver a chave de acesso completa">Nº NF</th>
           <th onclick="sortDetalhe('Modelo',this,${fil})" data-tip="Modelo do documento: 55=NFe · 57=CTe · 99=NFSe">Mod.</th>
           <th onclick="sortDetalhe('Origem Doc',this,${fil})" data-tip="Tipo de documento fiscal">Origem</th>
-          <th data-tip="Fornecedor identificado pelo CNPJ da chave de acesso (NF-e/CT-e: pos 6-19 · NFS-e: pos 7-20)">Fornecedor</th>
+          <th onclick="sortDetalhe('_forn',this,${fil})" data-tip="Clique para ordenar por fornecedor (NF-e/CT-e: pos 6-19 · NFS-e: pos 7-20)" style="cursor:pointer;">Fornecedor</th>
           <th onclick="sortDetalhe('Lançamento',this,${fil})" data-tip="Como a nota foi processada: Qive/Xml=automático · Manual=digitado · vazio=nunca processada">Lançamento</th>
           <th onclick="sortDetalhe('SitNorm',this,${fil})" data-tip="Situação atual da nota no sistema Qive">Situação</th>
           <th onclick="sortDetalhe('Dt. Recebimento',this,${fil})" data-tip="Data em que a nota foi recebida no Qive">Dt. Receb.</th>
@@ -851,11 +877,21 @@ function sortDetalhe(col, th, fil){
   detSortCol=col;
   document.querySelectorAll('.dtable th').forEach(t=>t.classList.remove('asc','desc'));
   th.classList.add(detSortDir===1?'asc':'desc');
-  detRows.sort((a,b)=>{
-    const va=a[col]??'',vb=b[col]??'';
-    if(typeof va==='number') return (va-vb)*detSortDir;
-    return String(va).localeCompare(String(vb),'pt-BR')*detSortDir;
-  });
+  if(col==='_forn'){
+    detRows.sort((a,b)=>{
+      const ca=cnpjFromChave(a['Chave Acesso'],a['Origem Doc']);
+      const cb=cnpjFromChave(b['Chave Acesso'],b['Origem Doc']);
+      const pa=PARCEIROS[ca], pb=PARCEIROS[cb];
+      const va=pa?(pa.nome||ca):ca, vb=pb?(pb.nome||cb):cb;
+      return String(va).localeCompare(String(vb),'pt-BR')*detSortDir;
+    });
+  } else {
+    detRows.sort((a,b)=>{
+      const va=a[col]??'',vb=b[col]??'';
+      if(typeof va==='number') return (va-vb)*detSortDir;
+      return String(va).localeCompare(String(vb),'pt-BR')*detSortDir;
+    });
+  }
   detPage=1; renderDetalhe(fil);
 }
 
