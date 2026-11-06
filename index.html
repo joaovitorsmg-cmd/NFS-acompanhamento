@@ -429,8 +429,14 @@ let DATA = RAW_DATA.map(r=>({...r, 'SitNorm': SIT_MAP[r['Situação']]||r['Situa
 // ═══ PARCEIROS (CNPJ lookup) ══════════════════════════════
 let PARCEIROS = {}; // {cnpj14: nome}
 
-function cnpjFromChave(chave){
+function cnpjFromChave(chave, origemDoc){
   const c=String(chave||'').replace(/\s/g,'');
+  if(!c) return '';
+  // NFS-e: Qive usa formato proprietário — CNPJ nas posições 7-20 (prefixo de 7 chars)
+  if(origemDoc==='NFSE'){
+    return c.length>=21 ? c.substring(7,21) : '';
+  }
+  // NF-e (mod.55) e CT-e (mod.57): chave SEFAZ padrão 44 dígitos — CNPJ nas posições 6-19
   return c.length>=44 ? c.substring(6,20) : '';
 }
 
@@ -623,7 +629,7 @@ function loadFile(e){
       renderAll();
       alert(`✅ ${DATA.length} registros carregados (${Object.keys(FILIAIS_META).length} filiais). Observações preservadas.`);
       // Fetch supplier names async (re-renders open detail + resumo when done)
-      fetchParceiros(DATA.map(r=>cnpjFromChave(r['Chave Acesso']))).then(()=>{
+      fetchParceiros(DATA.map(r=>cnpjFromChave(r['Chave Acesso'],r['Origem Doc']))).then(()=>{
         if(openFilial) renderDetalhe(openFilial);
         renderFornecedores();
       });
@@ -680,7 +686,7 @@ function getFilteredData(){
     if(sit&&r.SitNorm!==sit)return false;
     if(orig&&r['Origem Doc']!==orig)return false;
     if(fornQ){
-      const cnpj=cnpjFromChave(r['Chave Acesso']);
+      const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
       const p=PARCEIROS[cnpj];
       if(!(cnpj.includes(fornQ)||(p?.codigo||'').toLowerCase().includes(fornQ)||(p?.nome||'').toLowerCase().includes(fornQ))) return false;
     }
@@ -777,7 +783,7 @@ function renderDetalhe(fil){
     const cls=SIT_CLS[r.SitNorm]||'';
     const origTip=r['Origem Doc']==='NFE'?'Nota Fiscal Eletrônica':r['Origem Doc']==='CTE'?'Conhecimento de Transporte Eletrônico':'Nota Fiscal de Serviço';
     const lancTip=r['Lançamento']?`Lançamento via ${r['Lançamento']}`:'Sem lançamento registrado — indica que a nota nunca foi processada';
-    const cnpj=cnpjFromChave(r['Chave Acesso']);
+    const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
     const p=PARCEIROS[cnpj];
     const fornLabel=p?(p.codigo?p.codigo+' - ':'')+p.nome:'';
     const cnpjFmt=cnpj?cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5'):r['Chave Acesso']||'—';
@@ -825,7 +831,7 @@ function renderDetalhe(fil){
           <th onclick="sortDetalhe('Número NF',this,${fil})" data-tip="Número da nota fiscal — passe o mouse na linha para ver a chave de acesso completa">Nº NF</th>
           <th onclick="sortDetalhe('Modelo',this,${fil})" data-tip="Modelo do documento: 55=NFe · 57=CTe · 99=NFSe">Mod.</th>
           <th onclick="sortDetalhe('Origem Doc',this,${fil})" data-tip="Tipo de documento fiscal">Origem</th>
-          <th data-tip="Fornecedor identificado pelo CNPJ da chave de acesso (posições 6-19)">Fornecedor</th>
+          <th data-tip="Fornecedor identificado pelo CNPJ da chave de acesso (NF-e/CT-e: pos 6-19 · NFS-e: pos 7-20)">Fornecedor</th>
           <th onclick="sortDetalhe('Lançamento',this,${fil})" data-tip="Como a nota foi processada: Qive/Xml=automático · Manual=digitado · vazio=nunca processada">Lançamento</th>
           <th onclick="sortDetalhe('SitNorm',this,${fil})" data-tip="Situação atual da nota no sistema Qive">Situação</th>
           <th onclick="sortDetalhe('Dt. Recebimento',this,${fil})" data-tip="Data em que a nota foi recebida no Qive">Dt. Receb.</th>
@@ -939,7 +945,7 @@ function renderFornecedores(){
   const fd=getFilteredData();
   const byForn={};
   fd.forEach(r=>{
-    const cnpj=cnpjFromChave(r['Chave Acesso']);
+    const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
     if(!cnpj) return;
     if(!byForn[cnpj]) byForn[cnpj]={cnpj,n:0,p:0,ok:0};
     if(r.SitNorm==='Pendente Lançamento') byForn[cnpj].n++;
