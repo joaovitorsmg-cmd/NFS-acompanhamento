@@ -370,17 +370,15 @@ select.mini:focus,input.mini:focus{border-color:var(--pri-lt);}
   </div>
 
   <!-- FILIAIS -->
-  <div class="sec-header" onclick="toggleFilialSec()" style="cursor:pointer;" data-tip="Clique para expandir ou recolher as filiais">
+  <div class="sec-header">
     <div>
-      <div class="sec-title">Pendências por Filial <span id="filial-sec-chev" style="font-size:11px;color:var(--muted);margin-left:4px;">▶</span></div>
-      <div class="sec-sub" id="filial-sec-sub">Clique aqui para ver as filiais</div>
+      <div class="sec-title">Pendências por Filial</div>
+      <div class="sec-sub">Clique em um número para ver as notas · Observações salvas automaticamente</div>
     </div>
   </div>
 
-  <div id="filial-sec-body" style="display:none;">
-    <div id="filial-grid" class="filial-grid"></div>
-    <div id="filial-detalhe" class="fdetail"></div>
-  </div>
+  <div id="filial-grid" class="filial-grid"></div>
+  <div id="filial-detalhe" class="fdetail"></div>
 
   <!-- RESUMO CONSOLIDADO -->
   <div class="sec-header" style="margin-top:8px;">
@@ -787,18 +785,7 @@ function pct_s(n,t){ return t?`${Math.round(n/t*100)}% do total`:'—'; }
 
 // ═══ FILIAIS ══════════════════════════════════════════════
 let openFilial=null;
-let filialSecOpen=false;
 let detRows=[], detSortCol=null, detSortDir=1, detPage=1, detFornFilter='';
-
-function toggleFilialSec(){
-  filialSecOpen=!filialSecOpen;
-  document.getElementById('filial-sec-body').style.display=filialSecOpen?'':'none';
-  document.getElementById('filial-sec-chev').textContent=filialSecOpen?'▼':'▶';
-  const sub=document.getElementById('filial-sec-sub');
-  if(sub) sub.textContent=filialSecOpen
-    ? 'Clique em um número para ver as notas · Observações salvas automaticamente'
-    : (GFILTER.filial?'Filial '+GFILTER.filial+' selecionada — clique para expandir':'Clique aqui para ver as filiais');
-}
 
 function getFilteredData(){
   return DATA.filter(r=>{
@@ -870,31 +857,18 @@ function renderFiliais(){
 }
 
 function toggleFilial(fil){
-  if(openFilial===String(fil)){
-    // Fechar detalhe e limpar filtro de filial
-    openFilial=null;
-    document.getElementById('filial-detalhe').classList.remove('open');
-    document.getElementById('filial-detalhe').innerHTML='';
-    GFILTER.filial='';
-    const sel=document.getElementById('gf-filial'); if(sel) sel.value='';
-    applyGFilters();
-    return;
-  }
-  openFilialSit(fil,'');
+  if(openFilial===String(fil)){ closeDetalhe(); return; }
+  openFilialSit(fil, '');
 }
 
 function openFilialSit(fil, sitFilter){
-  // Seta filtro global de filial
-  GFILTER.filial=String(fil);
-  const sel=document.getElementById('gf-filial'); if(sel) sel.value=String(fil);
   openFilial=String(fil);
   detSortCol=null; detSortDir=1; detPage=1; detFornFilter='';
-  // Detalhe mostra somente a filial + situação clicada (sem filtro de filial para não double-filtrar)
-  const base=GFILTER.sits.size||GFILTER.origens.size||GFILTER.forn
-    ? DATA.filter(r=>{ if(GFILTER.sits.size&&!GFILTER.sits.has(r.SitNorm))return false; if(GFILTER.origens.size&&!GFILTER.origens.has(r['Origem Doc']))return false; return true; })
-    : DATA;
+  // Filtra as linhas do detalhe com base nos filtros globais + situação clicada
+  const base=GFILTER.sits.size||GFILTER.origens.size||GFILTER.forn ? getFilteredData() : DATA;
   detRows=base.filter(r=>String(r.Filial)===String(fil)&&(!sitFilter||r.SitNorm===sitFilter));
-  applyGFilters(); // renderAll re-renders tudo inclusive detalhe
+  renderFiliais();
+  renderDetalhe(fil);
   setTimeout(()=>{
     document.getElementById('fdet-'+fil)?.scrollIntoView({behavior:'smooth',block:'nearest'});
   },80);
@@ -904,9 +878,7 @@ function closeDetalhe(){
   openFilial=null;
   document.getElementById('filial-detalhe').classList.remove('open');
   document.getElementById('filial-detalhe').innerHTML='';
-  GFILTER.filial='';
-  const sel=document.getElementById('gf-filial'); if(sel) sel.value='';
-  applyGFilters();
+  renderFiliais();
 }
 
 function renderDetalhe(fil){
@@ -1182,7 +1154,6 @@ function renderAll(){
       </div>`;
     document.getElementById('consol-grid').innerHTML='';
     document.getElementById('urgency-banner').style.display='none';
-    const sub=document.getElementById('filial-sec-sub'); if(sub) sub.textContent='Clique aqui para ver as filiais';
     return;
   }
   document.getElementById('kpi-strip').style.display='';
@@ -1193,15 +1164,6 @@ function renderAll(){
   renderConsol();
   renderFornecedores();
   if(openFilial) renderDetalhe(openFilial);
-  // Atualiza subtítulo da seção quando colapsada
-  if(!filialSecOpen){
-    const fd=getFilteredData();
-    const nFil=new Set(fd.map(r=>r.Filial)).size;
-    const sub=document.getElementById('filial-sec-sub');
-    if(sub) sub.textContent=GFILTER.filial
-      ? 'Filial '+GFILTER.filial+' selecionada — clique para expandir'
-      : nFil+' filia'+(nFil===1?'l':'is')+' com dados — clique para expandir';
-  }
 }
 
 function clearData(){
@@ -1209,10 +1171,6 @@ function clearData(){
   DATA=[]; PARCEIROS={};
   GFILTER={sits:new Set(),origens:new Set(),filial:'',forn:''};
   openFilial=null;
-  filialSecOpen=false;
-  document.getElementById('filial-sec-body').style.display='none';
-  document.getElementById('filial-sec-chev').textContent='▶';
-  const sub=document.getElementById('filial-sec-sub'); if(sub) sub.textContent='Clique aqui para ver as filiais';
   document.getElementById('filial-detalhe').classList.remove('open');
   document.getElementById('filial-detalhe').innerHTML='';
   renderAll();
