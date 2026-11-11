@@ -788,16 +788,14 @@ let openFilial=null;
 let detRows=[], detSortCol=null, detSortDir=1, detPage=1, detFornFilter='';
 
 function getFilteredData(){
-  const sit=document.getElementById('f-sit').value;
-  const orig=document.getElementById('f-orig').value;
-  const fornQ=(document.getElementById('f-forn')?.value||'').trim().toLowerCase();
   return DATA.filter(r=>{
-    if(sit&&r.SitNorm!==sit)return false;
-    if(orig&&r['Origem Doc']!==orig)return false;
-    if(fornQ){
+    if(GFILTER.sits.size&&!GFILTER.sits.has(r.SitNorm)) return false;
+    if(GFILTER.origens.size&&!GFILTER.origens.has(r['Origem Doc'])) return false;
+    if(GFILTER.filial&&String(r.Filial)!==GFILTER.filial) return false;
+    if(GFILTER.forn){
       const cnpj=cnpjFromChave(r['Chave Acesso'],r['Origem Doc']);
       const p=PARCEIROS[cnpj];
-      if(!(cnpj.includes(fornQ)||(p?.codigo||'').toLowerCase().includes(fornQ)||(p?.nome||'').toLowerCase().includes(fornQ))) return false;
+      if(!(cnpj.includes(GFILTER.forn)||(p?.codigo||'').toLowerCase().includes(GFILTER.forn)||(p?.nome||'').toLowerCase().includes(GFILTER.forn))) return false;
     }
     return true;
   });
